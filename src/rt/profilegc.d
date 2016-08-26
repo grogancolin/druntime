@@ -22,9 +22,13 @@ import core.stdc.string;
 import core.exception : onOutOfMemoryError;
 
 struct Entry { size_t count, size; }
-
+struct SnapshotResult {
+    string name;
+    size_t count, size;
+}
 char[] buffer;
 Entry[string] newCounts;
+Entry[string] snapshotCounts;
 
 __gshared
 {
@@ -44,8 +48,18 @@ extern (C) void profilegc_setlogfilename(string name)
     logfilename = name;
 }
 
-
-
+/**
+ * Gets the latest GC stats and clears the data to start afresh.
+ */
+extern (C) SnapshotResult[] getLatestAndClear()
+{
+    SnapshotResult[] results;
+    foreach(key, val; snapshotCounts){
+        results ~= SnapshotResult(key, val.count, val.size);
+    }
+    snapshotCounts.clear;
+    return results;
+}
 public void accumulate(string file, uint line, string funcname, string type, size_t sz)
 {
     char[3 * line.sizeof + 1] buf;
@@ -79,7 +93,18 @@ public void accumulate(string file, uint line, string funcname, string type, siz
         pcount.size += sz;
     }
     else
+    {
         newCounts[buffer[0..length].idup] = Entry(1, sz); // new entry
+    }
+    if (auto pcount = cast(string)buffer[0 .. length] in snapshotCounts)
+    { // existing entry
+        pcount.count++;
+        pcount.size += sz;
+    }
+    else
+    {
+        snapshotCounts[buffer[0..length].idup] = Entry(1, sz); // new entry
+    }
 }
 
 // Merge thread local newCounts into globalNewCounts
